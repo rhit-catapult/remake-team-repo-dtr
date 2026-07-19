@@ -8,15 +8,17 @@ from config import *
 
 next_potion_spawn_x = 320
 next_star_spawn_x = 600
+next_sprint_spawn_x = 460
 # Hotbar inventory: one entry per slot, None (empty) or an item id like "star".
 hotbar_items = [None] * hotbar_slots
 
 
 def reset_pickups():
     """Reset spawn cursors and empty the hotbar for a fresh run."""
-    global next_potion_spawn_x, next_star_spawn_x
+    global next_potion_spawn_x, next_star_spawn_x, next_sprint_spawn_x
     next_potion_spawn_x = 320
     next_star_spawn_x = 600
+    next_sprint_spawn_x = 460
     hotbar_items[:] = [None] * hotbar_slots
 
 
@@ -129,6 +131,88 @@ def draw_potion(surface, potion, camera_x, camera_y, time_ms):
     pygame.draw.circle(surface, (255, 255, 255), (cx, body_cy), body_r, 1)
 
 
+def spawn_sprint_pots(pot_list, camera_x, spikes):
+    """Scatter blue sprint potions ahead of the camera (they refill stamina)."""
+    global next_sprint_spawn_x
+    max_pots = 6
+    while len(pot_list) < max_pots and next_sprint_spawn_x < camera_x + SCREEN_W + 400:
+        seed = int(next_sprint_spawn_x * 0.11)
+        px = next_sprint_spawn_x
+        on_spike = any(
+            px < s["x"] + SPIKE_WIDTH + 30 and px + POTION_WIDTH + 30 > s["x"]
+            for s in spikes
+        )
+        if not on_spike:
+            pot_list.append(
+                {
+                    "x": float(px),
+                    "base_y": float(GROUND_TOP - POTION_HEIGHT - 10),
+                    "width": POTION_WIDTH,
+                    "height": POTION_HEIGHT,
+                    "phase": seed * 0.6,
+                }
+            )
+        next_sprint_spawn_x += 640 + (seed % 5) * 80
+
+
+def update_sprint_pots(pot_list, camera_x, player_world_rect, spikes, stamina_full):
+    """Spawn, cull, and collect sprint potions. Returns how many were used now.
+
+    Mirrors the health potions: if stamina isn't full it refills right away;
+    only when full is the potion stowed in the hotbar for later (use with F).
+    """
+    spawn_sprint_pots(pot_list, camera_x, spikes)
+    refilled = 0
+    for pot in list(pot_list):
+        if pot["x"] + pot["width"] < camera_x - 400:
+            pot_list.remove(pot)
+            continue
+        rect = pygame.Rect(int(pot["x"]), int(pot["base_y"]), pot["width"], pot["height"])
+        if not rect.colliderect(player_world_rect):
+            continue
+        if not stamina_full:
+            pot_list.remove(pot)                  # low stamina: drink it now
+            refilled += 1
+        elif add_item_to_hotbar("sprint"):        # full: stow it for later
+            pot_list.remove(pot)
+    return refilled
+
+
+def draw_sprint_pot(surface, pot, camera_x, camera_y, time_ms):
+    """Draw a glowing blue-liquid flask with a lightning bolt that bobs in place."""
+    bob = math.sin(time_ms * 0.004 + pot["phase"]) * 4
+    left = pot["x"] - camera_x
+    top = pot["base_y"] - camera_y + bob
+    w = pot["width"]
+    h = pot["height"]
+    cx = int(left + w / 2)
+
+    glow_r = w
+    glow = pygame.Surface((glow_r * 4, glow_r * 4), pygame.SRCALPHA)
+    pulse = int(40 + (math.sin(time_ms * 0.005 + pot["phase"]) + 1) * 18)
+    pygame.draw.circle(glow, (90, 200, 255, pulse), (glow_r * 2, glow_r * 2), glow_r)
+    pygame.draw.circle(glow, (150, 235, 255, pulse), (glow_r * 2, glow_r * 2), glow_r // 2)
+    surface.blit(glow, (cx - glow_r * 2, int(top + h / 2) - glow_r * 2))
+
+    body_r = w // 2 + 1
+    body_cy = int(top + h - body_r)
+
+    neck_w = 7
+    neck_x = cx - neck_w // 2
+    neck_top = body_cy - body_r - 4
+    pygame.draw.rect(surface, (215, 228, 240), (neck_x, neck_top, neck_w, 9), border_radius=2)
+    pygame.draw.rect(surface, (120, 120, 150), (neck_x - 1, neck_top - 6, neck_w + 2, 7), border_radius=2)
+
+    pygame.draw.circle(surface, (232, 240, 250), (cx, body_cy), body_r)          # glass
+    pygame.draw.circle(surface, (40, 140, 220), (cx, body_cy + 2), body_r - 3)   # blue liquid
+    pygame.draw.circle(surface, (130, 205, 250), (cx - 2, body_cy + 4), max(2, (body_r - 3) // 2))
+    # Lightning bolt
+    bolt = [(cx + 1, body_cy - 5), (cx - 3, body_cy + 1), (cx, body_cy + 1),
+            (cx - 1, body_cy + 6), (cx + 4, body_cy - 1), (cx + 1, body_cy - 1)]
+    pygame.draw.polygon(surface, (255, 240, 120), bolt)
+    pygame.draw.circle(surface, (255, 255, 255), (cx, body_cy), body_r, 1)       # outline
+
+
 def add_item_to_hotbar(item):
     """Drop an item into the first empty hotbar slot; True if it fit."""
     for slot in range(hotbar_slots):
@@ -152,6 +236,9 @@ def use_selected_item(selected_slot):
     if item == "potion":
         hotbar_items[selected_slot] = None
         return ("potion", POTION_HEAL_AMOUNT)
+    if item == "sprint":
+        hotbar_items[selected_slot] = None
+        return ("sprint", SPRINT_REFILL)
     return None
 
 

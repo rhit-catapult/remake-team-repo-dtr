@@ -43,24 +43,6 @@ def draw_distance(surface, meters):
     surface.blit(text, (x + pad_x, y + pad_y))
 
 
-def draw_runner_icon(surface, bar_rect, time_ms, sprinting):
-    """A little running person beside the stamina bar; strides faster when sprinting."""
-    cx = bar_rect.x - 24
-    cy = bar_rect.centery
-    stride_speed = 0.03 if sprinting else 0.009
-    swing = math.sin(time_ms * stride_speed)
-    color = (90, 225, 130) if sprinting else (210, 216, 228)
-
-    pygame.draw.circle(surface, color, (cx, cy - 10), 4)                 # head
-    pygame.draw.line(surface, color, (cx, cy - 6), (cx, cy + 4), 2)     # torso
-    # Arms swinging
-    pygame.draw.line(surface, color, (cx, cy - 3), (cx + int(swing * 6), cy + 1), 2)
-    pygame.draw.line(surface, color, (cx, cy - 3), (cx - int(swing * 6), cy - 4), 2)
-    # Legs striding
-    pygame.draw.line(surface, color, (cx, cy + 4), (cx + int(swing * 7), cy + 12), 2)
-    pygame.draw.line(surface, color, (cx, cy + 4), (cx - int(swing * 7), cy + 12), 2)
-
-
 def get_stamina_bar_rect():
     """Return the stamina bar rect in the top-right corner."""
     bar_width = 240
@@ -69,7 +51,7 @@ def get_stamina_bar_rect():
 
 
 def draw_stamina_bar(surface, bar_rect, ratio, sprinting, time_ms):
-    """Draw a clear, labeled sprint/stamina bar with the runner icon beside it."""
+    """Draw a clear, labeled sprint/stamina bar."""
     ratio = max(0.0, min(1.0, ratio))
 
     # Label above the bar
@@ -90,8 +72,6 @@ def draw_stamina_bar(surface, bar_rect, ratio, sprinting, time_ms):
         surface.blit(gloss, (bar_rect.x, bar_rect.y))
     pygame.draw.rect(surface, (245, 247, 252), bar_rect, 2, border_radius=7)
 
-    draw_runner_icon(surface, bar_rect, time_ms, sprinting)
-
 
 def draw_death_screen(surface, meters):
     """'YOU DIED', distance travelled, and a restart hint over the frozen scene."""
@@ -108,35 +88,48 @@ def draw_death_screen(surface, meters):
 
 
 def draw_hotbar(surface, selected_slot):
-    """Draw a five-slot hotbar below the stamina bar."""
-    slot_size = 32
-    gap = 4
-    start_x = 15
-    start_y = 15
+    """Draw a five-slot hotbar with a clearly highlighted selected slot."""
+    slot_size = 48
+    gap = 7
+    start_x = 16
+    start_y = 16
 
     for slot in range(hotbar_slots):
         slot_rect = pygame.Rect(start_x + slot * (slot_size + gap), start_y, slot_size, slot_size)
         selected = slot == selected_slot
-        border_color = (255, 220, 40) if selected else (255, 255, 255)
-        pygame.draw.rect(surface, (45, 45, 55), slot_rect, border_radius=4)
-        pygame.draw.rect(surface, border_color, slot_rect, 2, border_radius=4)
+        cx, cy = slot_rect.center
 
-        # Draw whatever item this slot holds
+        # Background, and a bold gold highlight (tinted fill, thick border, glow ring)
+        pygame.draw.rect(surface, (74, 68, 34) if selected else (40, 40, 52), slot_rect, border_radius=7)
+        if selected:
+            pygame.draw.rect(surface, (255, 205, 40), slot_rect.inflate(8, 8), 3, border_radius=10)
+            pygame.draw.rect(surface, (255, 225, 70), slot_rect, 4, border_radius=7)
+        else:
+            pygame.draw.rect(surface, (195, 200, 212), slot_rect, 2, border_radius=7)
+
+        # Draw whatever item this slot holds (icons scaled up for the bigger slots)
         item = hotbar_items[slot]
         if item == "star":
-            draw_star_shape(surface, slot_rect.centerx, slot_rect.centery, 10, (255, 220, 60))
-            draw_star_shape(surface, slot_rect.centerx, slot_rect.centery, 5.5, (255, 250, 200))
+            draw_star_shape(surface, cx, cy, 15, (255, 220, 60))
+            draw_star_shape(surface, cx, cy, 8, (255, 250, 200))
         elif item == "potion":
-            fx, fy = slot_rect.centerx, slot_rect.centery
-            pygame.draw.rect(surface, (150, 96, 48), (fx - 3, fy - 12, 6, 4), border_radius=1)  # cork
-            pygame.draw.rect(surface, (215, 228, 240), (fx - 2, fy - 9, 4, 4))                  # neck
-            pygame.draw.circle(surface, (232, 240, 250), (fx, fy + 2), 8)                        # glass
-            pygame.draw.circle(surface, (206, 44, 54), (fx, fy + 3), 6)                          # liquid
-            pygame.draw.circle(surface, (255, 255, 255), (fx - 3, fy - 1), 2)                    # shine
+            pygame.draw.rect(surface, (150, 96, 48), (cx - 4, cy - 17, 8, 5), border_radius=1)  # cork
+            pygame.draw.rect(surface, (215, 228, 240), (cx - 3, cy - 13, 6, 5))                 # neck
+            pygame.draw.circle(surface, (232, 240, 250), (cx, cy + 3), 12)                       # glass
+            pygame.draw.circle(surface, (206, 44, 54), (cx, cy + 4), 9)                          # liquid
+            pygame.draw.circle(surface, (255, 255, 255), (cx - 4, cy), 3)                        # shine
+        elif item == "sprint":
+            pygame.draw.rect(surface, (120, 120, 150), (cx - 4, cy - 17, 8, 5), border_radius=1)  # cork
+            pygame.draw.rect(surface, (215, 228, 240), (cx - 3, cy - 13, 6, 5))                   # neck
+            pygame.draw.circle(surface, (232, 240, 250), (cx, cy + 3), 12)                         # glass
+            pygame.draw.circle(surface, (40, 140, 220), (cx, cy + 4), 9)                           # blue liquid
+            bolt = [(cx + 1, cy - 4), (cx - 4, cy + 4), (cx, cy + 4),
+                    (cx - 1, cy + 12), (cx + 5, cy + 1), (cx + 1, cy + 1)]
+            pygame.draw.polygon(surface, (255, 240, 120), bolt)                                    # lightning
 
-        # Tiny slot number in the corner so 1-5 selection is obvious
-        num = HEALTH_FONT.render(str(slot + 1), True, (210, 210, 220))
-        surface.blit(num, (slot_rect.x + 2, slot_rect.bottom - num.get_height() + 2))
+        # Slot number in the corner so 1-5 selection is obvious
+        num = HEALTH_FONT.render(str(slot + 1), True, (255, 240, 160) if selected else (185, 190, 205))
+        surface.blit(num, (slot_rect.x + 4, slot_rect.bottom - num.get_height() + 2))
 
 
 def draw_menu(surface, time_ms, difficulty):

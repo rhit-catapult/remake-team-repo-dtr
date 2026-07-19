@@ -43,6 +43,7 @@ BLINK_DURATION_MS = 140
 
 # --- Stamina / hotbar ---------------------------------------------------------
 sprint_ticks = 500
+SPRINT_REFILL = 250   # stamina restored per sprint potion (no auto-regen)
 hotbar_slots = 5
 
 # --- Enemies / combat ---------------------------------------------------------
