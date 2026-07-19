@@ -68,6 +68,7 @@ invincible_until = 0      # tick until which the slime takes no damage
 # Entity lists (spawn cursors that refill them live in the entity modules).
 monsters = []
 potions = []
+sprint_pots = []
 stars = []
 spikes = []
 obstacles = []
@@ -133,6 +134,7 @@ def start_run(level):
     invincible_until = 0
     monsters.clear()
     potions.clear()
+    sprint_pots.clear()
     stars.clear()
     spikes.clear()
     obstacles.clear()
@@ -186,6 +188,8 @@ while True:
                     invincible_until = max(invincible_until, pygame.time.get_ticks() + amount)
                 elif kind == "potion":
                     health_bar.heal(amount)
+                elif kind == "sprint":
+                    green_ticks = min(sprint_ticks, green_ticks + amount)
         if event.type == pygame.MOUSEWHEEL:
             selected_hotbar_slot = (selected_hotbar_slot - event.y) % hotbar_slots
 
@@ -205,8 +209,10 @@ while True:
         jump_requested = False
     current_speed = speed if not on_ground else half_ellipse_speed
     sprinting = False
-    if pressed_keys[pygame.K_SPACE] & (pressed_keys[pygame.K_UP] or pressed_keys[pygame.K_LEFT] or pressed_keys[pygame.K_RIGHT]) and green_ticks > 0:
-        current_speed = speed * 1.05
+    # Sprint: hold Space while moving left/right — boosts the base speed, so it
+    # works both on the ground and midair, and drains stamina.
+    if pressed_keys[pygame.K_SPACE] and (moving_left or moving_right) and green_ticks > 0:
+        current_speed *= 1.25
         green_ticks -= 1
         sprinting = True
 
@@ -242,8 +248,13 @@ while True:
     # Islands near the player (world continues as you explore)
     islands = get_active_islands(x + square_size / 2 - SCREEN_W / 2, SCREEN_W)
 
+    # Crouching uses a shorter, feet-anchored collision body so the slime can
+    # squeeze under low islands. top_off shifts the box down from the full square.
+    collide_h = square_size // 3 if crouching else square_size
+    top_off = square_size - collide_h
+
     # Solid islands: stop walking/jumping sideways through their bodies
-    x = resolve_island_x(x, y, prev_x, square_size, islands)
+    x = resolve_island_x(x, y + top_off, prev_x, collide_h, islands)
 
     if jump_requested and jumps_used < 2:
         vertical_velocity = jump_strength
@@ -267,9 +278,10 @@ while True:
     else:
         # Solid islands: land on top, hit underside when jumping, never pass through
         was_airborne = not on_ground
-        y, vertical_velocity, landed_on_island = resolve_island_y(
-            x, y, prev_y, square_size, vertical_velocity, islands
+        body_top, vertical_velocity, landed_on_island = resolve_island_y(
+            x, y + top_off, prev_y + top_off, collide_h, vertical_velocity, islands
         )
+        y = body_top - top_off   # convert the feet-anchored box back to the full square
         if landed_on_island:
             if was_airborne:
                 landing_squash_frames = 6
@@ -280,7 +292,10 @@ while True:
             on_ground = False
 
     # Enemy hitboxes: stomp from above to consume; side/below contact hurts
-    player_world_rect = pygame.Rect(int(x), int(y), square_size, square_size)
+    # Crouching shrinks the hitbox from the top (feet stay planted) so the slime
+    # can duck under high hazards.
+    crouch_h = square_size // 3 if crouching else square_size
+    player_world_rect = pygame.Rect(int(x), int(y + square_size - crouch_h), square_size, crouch_h)
     hit_monster = None
     for monster in monsters:
         if player_world_rect.colliderect(get_monster_hitbox(monster)):
@@ -307,8 +322,9 @@ while True:
             on_ground = True
             jumps_used = 0
             landing_squash_frames = 0
-            # A clean consume grants only brief mercy i-frames
+            # A clean consume grants brief mercy i-frames and heals a little
             invincible_until = max(invincible_until, current_time + CONSUME_IFRAME_MS)
+            health_bar.heal(5)
         elif current_time >= invincible_until:
             player_center = x + square_size / 2
             monster_center = hit_monster["x"] + hit_monster["width"] / 2
@@ -325,8 +341,14 @@ while True:
 
     # Potions: collect any the slime is now overlapping (heals + green "+" popup)
     if not game_over:
-        player_world_rect = pygame.Rect(int(x), int(y), square_size, square_size)
+        crouch_h = square_size // 3 if crouching else square_size
+        player_world_rect = pygame.Rect(int(x), int(y + square_size - crouch_h), square_size, crouch_h)
         update_potions(potions, camera_x, player_world_rect, health_bar, spikes)
+        # Sprint potions refill stamina (no auto-regen); stow in hotbar when full
+        refilled = update_sprint_pots(sprint_pots, camera_x, player_world_rect,
+                                      spikes, green_ticks >= sprint_ticks)
+        if refilled:
+            green_ticks = min(sprint_ticks, green_ticks + refilled * SPRINT_REFILL)
         update_stars(stars, camera_x, player_world_rect)
         # Track furthest distance from spawn for the run's meter count
         max_distance = max(max_distance, abs(x))
@@ -417,10 +439,7 @@ while True:
     )
 
     current_time = pygame.time.get_ticks()
-    elapsed_seconds = (current_time - last_stamina_regen_time) // 1000
-    if elapsed_seconds > 0:
-        green_ticks = min(sprint_ticks, green_ticks + elapsed_seconds * 5)
-        last_stamina_regen_time += elapsed_seconds * 1000
+    # Stamina no longer regenerates on its own — refill it with sprint potions.
 
     # Trigger the death sequence the moment HP hits zero
     if health_bar.is_dead and not game_over:
@@ -467,6 +486,12 @@ while True:
         if sx + potion["width"] < -60 or sx > SCREEN_W + 60:
             continue
         draw_potion(screen, potion, camera_x, camera_y, current_time)
+
+    for pot in sprint_pots:
+        sx = pot["x"] - camera_x
+        if sx + pot["width"] < -60 or sx > SCREEN_W + 60:
+            continue
+        draw_sprint_pot(screen, pot, camera_x, camera_y, current_time)
 
     for star in stars:
         sx = star["x"] - camera_x
