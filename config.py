@@ -70,8 +70,10 @@ PIXELS_PER_METER = 50.0   # world pixels that count as one "meter"
 DEATH_ANIM_MS = 900       # slime melt animation duration
 
 # --- Boss level ---------------------------------------------------------------
-BOSS_METERS = 200         # distance at which the boss zone (dragon + red sky) begins
-BOSS_END_METERS = 225     # distance at which the boss zone ends
+# The dragon returns in every [200n, 200n+25] m window; each return hits harder.
+BOSS_METERS = 200         # boss windows recur every this many meters
+BOSS_END_METERS = 250     # end of each boss window (BOSS_METERS + 50 -> a 50 m zone)
+DRAGON_DAMAGE_STEP = 12   # extra dragon contact damage per return
 
 # --- Difficulty ---------------------------------------------------------------
 # Chosen on the start screen with keys 1/2/3. Higher levels pack in more

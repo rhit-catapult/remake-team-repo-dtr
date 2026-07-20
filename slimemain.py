@@ -82,9 +82,12 @@ run_start_time = 0        # tick when the current run began (for the stopwatch)
 # Trailing void border (lethal wall that follows behind the slime)
 border_x = float(-BORDER_TRAIL)
 
-# Boss level (harder hazards + a flying dragon once past BOSS_METERS)
-boss_triggered = False
-boss_zone_active = False       # open from reaching 200 m until reaching 225 m
+# Boss level: a dragon returns in every 200 m window [200n, 200n+25], hitting
+# harder each time it comes back.
+boss_triggered = False         # one-time hazard ramp on the first zone
+boss_zone_active = False       # currently inside a boss window
+boss_wave = 0                  # how many times the dragon has appeared
+active_zone_n = -1             # which 200 m block's zone we last entered
 boss_banner_until = 0
 boss_dragon = None
 boss_dragon_cleared = False   # dragon slain during the current zone visit
@@ -110,7 +113,7 @@ def start_run(level):
     global green_ticks, last_monster_attack_time, last_stamina_regen_time, last_hazard_hit_time
     global max_distance, game_over, death_time, run_start_time
     global border_x, boss_triggered, boss_zone_active, boss_banner_until
-    global boss_dragon, boss_dragon_cleared
+    global boss_dragon, boss_dragon_cleared, boss_wave, active_zone_n
 
     difficulty = level
     cfg = DIFFICULTY_SETTINGS[level]
@@ -152,6 +155,8 @@ def start_run(level):
     border_x = float(-BORDER_TRAIL)
     boss_triggered = False
     boss_zone_active = False
+    boss_wave = 0
+    active_zone_n = -1
     boss_banner_until = 0
     boss_dragon = None
     boss_dragon_cleared = False
@@ -344,11 +349,10 @@ while True:
         crouch_h = square_size // 3 if crouching else square_size
         player_world_rect = pygame.Rect(int(x), int(y + square_size - crouch_h), square_size, crouch_h)
         update_potions(potions, camera_x, player_world_rect, health_bar, spikes)
-        # Sprint potions refill stamina (no auto-regen); stow in hotbar when full
-        refilled = update_sprint_pots(sprint_pots, camera_x, player_world_rect,
-                                      spikes, green_ticks >= sprint_ticks)
-        if refilled:
-            green_ticks = min(sprint_ticks, green_ticks + refilled * SPRINT_REFILL)
+        # Lightning bolts on the ground — always grabbed, refill stamina (capped)
+        grabbed = update_sprint_pots(sprint_pots, camera_x, player_world_rect, spikes)
+        if grabbed:
+            green_ticks = min(sprint_ticks, green_ticks + grabbed * SPRINT_REFILL)
         update_stars(stars, camera_x, player_world_rect)
         # Track furthest distance from spawn for the run's meter count
         max_distance = max(max_distance, abs(x))
@@ -385,30 +389,38 @@ while True:
                 health_bar.damage(BORDER_DAMAGE)
                 last_hazard_hit_time = current_time
 
-        # Boss zone: opens the first time you reach BOSS_METERS and stays open
-        # (dragon + red sky) even if you fall back — closing only once you reach
-        # BOSS_END_METERS, at which point the dragon flies off.
+        # Boss zones recur in every 200 m window: [200n, 200n+25]. Each fresh
+        # appearance is a new "wave" whose dragon hits harder than the last.
         current_m = x / PIXELS_PER_METER
+        zone_n = int(current_m // BOSS_METERS)
+        in_zone = zone_n >= 1 and (current_m - BOSS_METERS * zone_n) <= (BOSS_END_METERS - BOSS_METERS)
 
-        if not boss_triggered and current_m >= BOSS_METERS:
-            boss_triggered = True
+        if in_zone and zone_n != active_zone_n:
+            # Entering a brand-new boss window
+            active_zone_n = zone_n
             boss_zone_active = True
-            obstacle_speed *= 1.6
-            obstacle_gap = max(240, int(obstacle_gap * 0.55))
-            spike_gap = max(180, int(spike_gap * 0.6))
-            obstacle_damage += 10
-            spike_damage += 8
-            monster_max += 12
+            boss_dragon_cleared = False
+            boss_wave += 1
             boss_banner_until = current_time + 3500
+            if not boss_triggered:                # ramp the hazards once, on the first zone
+                boss_triggered = True
+                obstacle_speed *= 1.6
+                obstacle_gap = max(240, int(obstacle_gap * 0.55))
+                spike_gap = max(180, int(spike_gap * 0.6))
+                obstacle_damage += 10
+                spike_damage += 8
+                monster_max += 12
 
-        if boss_zone_active and current_m >= BOSS_END_METERS:
-            boss_zone_active = False              # cleared the gate
+        if boss_zone_active and not in_zone:
+            boss_zone_active = False              # cleared this gate
             if boss_dragon is not None:
                 boss_dragon["fleeing"] = True     # send it soaring off
 
-        # While the zone is open, keep a dragon in play (unless already slain)
+        # While the zone is open, keep a dragon in play (unless already slain).
+        # Its damage climbs each wave it returns.
         if boss_zone_active and boss_dragon is None and not boss_dragon_cleared:
             boss_dragon = spawn_dragon(x + SCREEN_W)
+            boss_dragon["damage"] = obstacle_damage + 6 + (boss_wave - 1) * DRAGON_DAMAGE_STEP
 
         # Flying dragon boss: weaves and swoops; hurts on contact, dies to a stomp.
         # While fleeing it just soars off and can't be hit.
@@ -429,7 +441,7 @@ while True:
                     push_dir = -1 if (x + square_size / 2) < boss_dragon["x"] else 1
                     knockback_velocity_x = push_dir * MONSTER_KNOCKBACK
                     if current_time - last_hazard_hit_time >= HAZARD_COOLDOWN_MS:
-                        health_bar.damage(obstacle_damage + 6)
+                        health_bar.damage(boss_dragon.get("damage", obstacle_damage + 6))
                         last_hazard_hit_time = current_time
 
     # Screen-space rect (centered horizontally; vertical position is true world Y)
@@ -499,12 +511,14 @@ while True:
             continue
         draw_star(screen, star, camera_x, camera_y, current_time)
 
-    # Dotted red gate line marking the end of the boss zone (BOSS_END_METERS)
-    gate_screen = int(BOSS_END_METERS * PIXELS_PER_METER - camera_x)
-    if -6 <= gate_screen <= SCREEN_W + 6:
-        for gy in range(0, SCREEN_H, 26):
-            pygame.draw.line(screen, (255, 70, 70),
-                             (gate_screen, gy), (gate_screen, gy + 14), 4)
+    # Dotted red gate line marking the end of the current boss window
+    if boss_zone_active:
+        gate_m = active_zone_n * BOSS_METERS + (BOSS_END_METERS - BOSS_METERS)
+        gate_screen = int(gate_m * PIXELS_PER_METER - camera_x)
+        if -6 <= gate_screen <= SCREEN_W + 6:
+            for gy in range(0, SCREEN_H, 26):
+                pygame.draw.line(screen, (255, 70, 70),
+                                 (gate_screen, gy), (gate_screen, gy + 14), 4)
 
     # The flying dragon boss soars above the scene
     if boss_dragon is not None:
