@@ -32,12 +32,14 @@ from typing import Optional
 
 import pygame
 
+import scores
+
 
 # ---------------------------------------------------------------------------
 # Video and gameplay constants
 # ---------------------------------------------------------------------------
 
-SCREEN_W, SCREEN_H = 960, 600  
+SCREEN_W, SCREEN_H = 960, 600
 INTERNAL_W, INTERNAL_H = 320, 200
 VIEW_H = 168
 HUD_H = INTERNAL_H - VIEW_H
@@ -57,6 +59,7 @@ SUMMONER_MAX_HEALTH = 110
 OVERSEER_MAX_HEALTH = 127
 NIGHTMARE_MAX_HEALTH = 280
 SHIELD_MAX_DURABILITY = 100
+SMALL_SHIELD_MAX_DURABILITY = 30
 DOOR_TILES = ("D", "R", "K", "G", "P")
 
 WHITE = (235, 235, 225)
@@ -1005,6 +1008,11 @@ class Game:
         self.muzzle_timer = 0.0
         self.shield_flash = 0.0
         self.shield_hits = 0
+        self.shield_max_durability = (
+            SMALL_SHIELD_MAX_DURABILITY
+            if self.selected_map_size == "small"
+            else SHIELD_MAX_DURABILITY
+        )
         self.damage_flash = 0.0
         self.face_hurt_timer = 0.0
         self.bob_time = 0.0
@@ -1057,6 +1065,9 @@ class Game:
         if self.selected_map_size == "small":
             if self.selected_difficulty == "easy":
                 enemy_spawns = [spawn for spawn in enemy_spawns if spawn[2] != "boss"]
+            else:
+                # Small Hard has 1.5x regular opposition while keeping one boss.
+                enemy_spawns.extend(self.small_hard_reinforcements(enemy_spawns))
         else:
             enemy_spawns.extend(self.big_enemy_spawns())
             if self.selected_difficulty == "easy":
@@ -1089,9 +1100,6 @@ class Game:
             Pickup(18.8, 16.5, "shield"),
             Pickup(16.0, 20.5, "shells"),
             Pickup(21.5, 12.4, "medkit"),
-            # All Small-map modes get 50% more medkits, rounded up (3 -> 5).
-            Pickup(4.5, 10.5, "medkit"),
-            Pickup(15.5, 19.5, "medkit"),
         ]
 
         if self.selected_map_size == "big":
@@ -1107,6 +1115,36 @@ class Game:
             self.exit_y = 21.1
 
         self.set_mouse_capture(True)
+
+    def small_hard_reinforcements(self, current_spawns):
+        """Add 13 reinforcements: 26 regular enemies become 39."""
+        offsets = (
+            (0.38, 0.0), (-0.38, 0.0), (0.0, 0.38), (0.0, -0.38),
+            (0.30, 0.30), (-0.30, 0.30), (0.30, -0.30), (-0.30, -0.30),
+        )
+        reinforcements = []
+        occupied = [(spawn[0], spawn[1]) for spawn in current_spawns]
+        regular_spawns = [
+            spawn for spawn in current_spawns if spawn[2] != "boss"
+        ][::2]
+        for index, (x, y, kind, hp) in enumerate(regular_spawns):
+            placed = None
+            for attempt in range(len(offsets)):
+                offset_x, offset_y = offsets[(index + attempt) % len(offsets)]
+                candidate_x = x + offset_x
+                candidate_y = y + offset_y
+                separated = all(
+                    math.hypot(candidate_x - other_x, candidate_y - other_y) >= 0.24
+                    for other_x, other_y in occupied
+                )
+                if separated and self.can_stand(candidate_x, candidate_y, 0.18):
+                    placed = (candidate_x, candidate_y, kind, hp)
+                    break
+            if placed is None:
+                placed = (x, y, kind, hp)
+            reinforcements.append(placed)
+            occupied.append((placed[0], placed[1]))
+        return reinforcements
 
     def big_enemy_spawns(self):
         """Regular opposition spread across the three expanded quadrants."""
@@ -1139,6 +1177,8 @@ class Game:
         return [
             # Immediate tutorial cache behind the one-shot breakable wall.
             Pickup(4.4, 1.5, "ammobox"), Pickup(5.3, 2.3, "medkit"),
+            # Big-only healing in the original quadrant; Small stays at 3 medkits.
+            Pickup(4.5, 10.5, "medkit"), Pickup(15.5, 19.5, "medkit"),
             # Quadrant two supplies and blue progression key.
             Pickup(26.5, 5.5, "ammobox"), Pickup(31.0, 13.0, "shells"),
             Pickup(37.5, 6.0, "sprayer"), Pickup(45.0, 7.0, "medkit"),
@@ -1680,83 +1720,18 @@ class Game:
         self.shield_hits += max(1, durability_damage)
         self.shield_flash = 0.18
         self.sounds.play("switch")
-        if self.shield_hits >= SHIELD_MAX_DURABILITY:
-            self.shield_hits = SHIELD_MAX_DURABILITY
+        if self.shield_hits >= self.shield_max_durability:
+            self.shield_hits = self.shield_max_durability
             self.has_shield = False
             self.weapon = "shotgun" if self.has_shotgun else "pistol"
             self.set_message("THE SHIELD HAS BROKEN!", 2.0)
         else:
-            remaining = SHIELD_MAX_DURABILITY - self.shield_hits
+            remaining = self.shield_max_durability - self.shield_hits
             self.set_message(
-                f"BULLET BLOCKED - SHIELD {remaining}/{SHIELD_MAX_DURABILITY}",
+                f"BULLET BLOCKED - SHIELD {remaining}/{self.shield_max_durability}",
                 0.55,
             )
         return True
-
-    def spawn_boss_projectile(self, enemy, kind, damage, speed, effect="", spread=0.0):
-        """Launch a visible projectile toward the player's current position."""
-        aim_angle = math.atan2(self.player_y - enemy.y, self.player_x - enemy.x)
-        aim_angle += random.uniform(-spread, spread)
-        direction_x = math.cos(aim_angle)
-        direction_y = math.sin(aim_angle)
-        self.projectiles.append(
-            Projectile(
-                enemy.x + direction_x * 0.38,
-                enemy.y + direction_y * 0.38,
-                direction_x,
-                direction_y,
-                speed,
-                damage,
-                kind,
-                source=enemy,
-                effect=effect,
-            )
-        )
-
-    def update_projectiles(self, dt):
-        """Move boss projectiles, stop them at walls, and resolve player impacts."""
-        for projectile in self.projectiles:
-            if not projectile.active:
-                continue
-            projectile.life -= dt
-            if projectile.life <= 0:
-                projectile.active = False
-                continue
-
-            travel = projectile.speed * dt
-            steps = max(1, int(travel / 0.045) + 1)
-            step_x = projectile.dx * travel / steps
-            step_y = projectile.dy * travel / steps
-            for _ in range(steps):
-                next_x = projectile.x + step_x
-                next_y = projectile.y + step_y
-                if self.tile_blocks(int(next_x), int(next_y)):
-                    projectile.active = False
-                    break
-
-                projectile.x = next_x
-                projectile.y = next_y
-                if math.hypot(projectile.x - self.player_x, projectile.y - self.player_y) < 0.30:
-                    projectile.active = False
-                    if self.shield_blocks_bullet(projectile.x, projectile.y, 2):
-                        break
-
-                    if projectile.effect == "overseer":
-                        self.armor = max(0, self.armor - random.randint(3, 7))
-                    self.damage_player(projectile.damage)
-                    if projectile.effect == "poison":
-                        self.poison_timer = max(self.poison_timer, 2.5)
-                    elif projectile.effect == "drain":
-                        source = projectile.source
-                        if source is not None and not source.dead:
-                            source.hp = min(NIGHTMARE_MAX_HEALTH, source.hp + projectile.damage)
-                    elif projectile.effect == "overseer":
-                        source = projectile.source
-                        if source is not None and not source.dead:
-                            source.hp = min(OVERSEER_MAX_HEALTH, source.hp + 2)
-                    break
-
-        self.projectiles = [projectile for projectile in self.projectiles if projectile.active]
 
     # ------------------------------------------------------------------
     # Enemies
@@ -1895,13 +1870,10 @@ class Game:
                     if distance < 1.15:
                         self.damage_player(random.randint(18, 27))
                     else:
-                        self.spawn_boss_projectile(
-                            enemy,
-                            "warden_bolt",
-                            random.randint(10, 18),
-                            4.4,
-                            spread=0.035,
-                        )
+                        accuracy = clamp(0.94 - distance * 0.035, 0.62, 0.90)
+                        if random.random() < accuracy:
+                            if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                                self.damage_player(random.randint(10, 18))
                     continue
                 move_speed = 1.12
                 desired_distance = 2.25
@@ -1935,12 +1907,8 @@ class Game:
                     enemy.state = "attack"
                     enemy.state_timer = 0.30
                     enemy.attack_cooldown = random.uniform(0.82, 1.05)
-                    self.spawn_boss_projectile(
-                        enemy,
-                        "rift_bolt",
-                        random.randint(7, 12),
-                        3.4,
-                    )
+                    if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                        self.damage_player(random.randint(7, 12))
                     continue
                 move_speed = 0.66
                 desired_distance = 4.0
@@ -1949,13 +1917,10 @@ class Game:
                     enemy.state = "attack"
                     enemy.state_timer = 0.28
                     enemy.attack_cooldown = random.uniform(0.72, 0.96)
-                    self.spawn_boss_projectile(
-                        enemy,
-                        "overseer_orb",
-                        random.randint(8, 14),
-                        3.8,
-                        effect="overseer",
-                    )
+                    if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                        self.armor = max(0, self.armor - random.randint(3, 7))
+                        self.damage_player(random.randint(8, 14))
+                        enemy.hp = min(OVERSEER_MAX_HEALTH, enemy.hp + 2)
                     continue
                 move_speed = 0.92
                 desired_distance = 3.4
@@ -1967,28 +1932,17 @@ class Game:
                     if distance < 1.8:
                         self.damage_player(random.randint(25, 36))
                     elif cycle == 0:
-                        self.spawn_boss_projectile(
-                            enemy,
-                            "nightmare_bolt",
-                            random.randint(11, 17),
-                            4.6,
-                        )
+                        if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                            self.damage_player(random.randint(11, 17))
                     elif cycle == 1:
-                        self.spawn_boss_projectile(
-                            enemy,
-                            "poison_orb",
-                            random.randint(9, 15),
-                            3.5,
-                            effect="poison",
-                        )
+                        if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                            self.damage_player(random.randint(9, 15))
+                            self.poison_timer = max(self.poison_timer, 2.5)
                     else:
-                        self.spawn_boss_projectile(
-                            enemy,
-                            "drain_orb",
-                            random.randint(8, 13),
-                            4.0,
-                            effect="drain",
-                        )
+                        if not self.shield_blocks_bullet(enemy.x, enemy.y, 2):
+                            drained = random.randint(8, 13)
+                            self.damage_player(drained)
+                            enemy.hp = min(NIGHTMARE_MAX_HEALTH, enemy.hp + drained)
                     enemy.attack_cooldown = random.uniform(0.48, 0.68)
                     continue
                 move_speed = 1.18
@@ -2111,9 +2065,9 @@ class Game:
             elif pickup.kind == "shieldrepair":
                 self.has_shield = True
                 self.shield_hits = max(0, self.shield_hits - 10)
-                remaining = SHIELD_MAX_DURABILITY - self.shield_hits
+                remaining = self.shield_max_durability - self.shield_hits
                 self.set_message(
-                    f"Shield repaired: {remaining}/{SHIELD_MAX_DURABILITY}.",
+                    f"Shield repaired: {remaining}/{self.shield_max_durability}.",
                     1.5,
                 )
 
@@ -2309,12 +2263,6 @@ class Game:
             if projection:
                 entries.append(("switch", switch, projection))
 
-        for projectile in self.projectiles:
-            if projectile.active:
-                projection = self.project(projectile.x, projectile.y)
-                if projection:
-                    entries.append(("projectile", projectile, projection))
-
         projection = self.project(self.exit_x, self.exit_y)
         if projection:
             entries.append(("exit", None, projection))
@@ -2351,15 +2299,6 @@ class Game:
                 if obj.activated:
                     sprite.set_alpha(145)
                 self.draw_sprite_occluded(sprite, center_x, bottom, depth, zbuffer)
-
-            elif kind == "projectile":
-                source = self.assets.projectile_frames[obj.kind]
-                size = clamp(int(height * 0.18), 5, 38)
-                sprite = pygame.transform.scale(source, (size, size))
-                projectile_bottom = VIEW_H // 2 + size // 2
-                self.draw_sprite_occluded(
-                    sprite, center_x, projectile_bottom, depth, zbuffer
-                )
 
             else:
                 frame = int(self.elapsed * 7) % len(self.assets.exit_frames)
@@ -2415,7 +2354,10 @@ class Game:
                 (91, (67, 24), (48, 10)), (97, (139, 22), (164, 8)),
             )
             for threshold, start, end in cracks:
-                if self.shield_hits >= threshold:
+                damage_threshold = math.ceil(
+                    self.shield_max_durability * threshold / 100
+                )
+                if self.shield_hits >= damage_threshold:
                     pygame.draw.line(
                         self.canvas,
                         (13, 17, 22),
@@ -2530,8 +2472,8 @@ class Game:
 
         weapon_label = WEAPONS[self.weapon]["name"]
         if self.weapon == "shield":
-            remaining = SHIELD_MAX_DURABILITY - self.shield_hits
-            weapon_label += f" {remaining}/{SHIELD_MAX_DURABILITY}"
+            remaining = self.shield_max_durability - self.shield_hits
+            weapon_label += f" {remaining}/{self.shield_max_durability}"
         weapon_text = self.font6.render(weapon_label, False, YELLOW)
         self.canvas.blit(weapon_text, (139, VIEW_H + 3))
 
@@ -2789,6 +2731,8 @@ class Game:
         self.canvas.blit(keys, keys.get_rect(center=(INTERNAL_W // 2, 187)))
 
     def draw_end_screen(self):
+        best = scores.record("hangar", self.score)   # persist high score
+
         overlay = pygame.Surface((INTERNAL_W, INTERNAL_H), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 205))
         self.canvas.blit(overlay, (0, 0))
@@ -2801,11 +2745,13 @@ class Game:
             subtitle = f"SCORE {self.score:05d}   KILLS {self.kills}/{self.total_kills}"
 
         sub = self.font8.render(subtitle, False, WHITE)
+        best_txt = self.font8.render(f"BEST {best:05d}", False, (255, 220, 90))
         restart = self.font8.render("PRESS ENTER TO RESTART", False, WHITE)
 
         self.canvas.blit(title, title.get_rect(center=(INTERNAL_W // 2, 78)))
-        self.canvas.blit(sub, sub.get_rect(center=(INTERNAL_W // 2, 108)))
-        self.canvas.blit(restart, restart.get_rect(center=(INTERNAL_W // 2, 132)))
+        self.canvas.blit(sub, sub.get_rect(center=(INTERNAL_W // 2, 106)))
+        self.canvas.blit(best_txt, best_txt.get_rect(center=(INTERNAL_W // 2, 120)))
+        self.canvas.blit(restart, restart.get_rect(center=(INTERNAL_W // 2, 136)))
 
     def draw_pause(self):
         overlay = pygame.Surface((INTERNAL_W, INTERNAL_H), pygame.SRCALPHA)
@@ -2855,7 +2801,6 @@ class Game:
             door.update(dt)
 
         self.update_enemies(dt)
-        self.update_projectiles(dt)
         self.update_pickups()
 
     def render_frame(self):

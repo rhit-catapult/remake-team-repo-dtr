@@ -1,0 +1,23 @@
+{
+  "_player": "daniel",
+  "flappy": {
+    "YOU": 21
+  },
+  "karate_red": 4,
+  "karate_blue": 11,
+  "slime_easy": {
+    "daniel": 216
+  },
+  "impossible": {
+    "daniel": 3
+  },
+  "slime_normal": {
+    "daniel": 41
+  },
+  "hangar": {
+    "daniel": 2700
+  },
+  "slime_hard": {
+    "daniel": 3110
+  }
+}
