@@ -22,6 +22,7 @@ import pygame
 from config import *
 from fonts import *
 from healthbar import HealthBar
+import scores
 from terrain import *
 from slime import *
 from enemies import *
@@ -459,6 +460,9 @@ while True:
         death_time = current_time
         knockback_velocity_x = 0.0
         vertical_velocity = 0
+        # Persist the run's distance to this difficulty's leaderboard (meters)
+        slime_key = "slime_" + DIFFICULTY_SETTINGS[difficulty]["name"].lower()
+        slime_best = scores.record(slime_key, int(max_distance / PIXELS_PER_METER))
 
     draw_sky(screen, current_time)
     draw_clouds(screen, camera_x, current_time)
@@ -683,7 +687,8 @@ while True:
 
     if game_over:
         meters = int(max_distance / PIXELS_PER_METER)
-        draw_death_screen(screen, meters)
+        draw_death_screen(screen, meters,
+                          scores.get("slime_" + DIFFICULTY_SETTINGS[difficulty]["name"].lower()))
 
     pygame.display.update()
     clock.tick(60)

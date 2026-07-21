@@ -73,8 +73,8 @@ def draw_stamina_bar(surface, bar_rect, ratio, sprinting, time_ms):
     pygame.draw.rect(surface, (245, 247, 252), bar_rect, 2, border_radius=7)
 
 
-def draw_death_screen(surface, meters):
-    """'YOU DIED', distance travelled, and a restart hint over the frozen scene."""
+def draw_death_screen(surface, meters, best=None):
+    """'YOU DIED', distance travelled, best distance, and a restart hint."""
     def centered(font, text, color, cy, shadow=(0, 0, 0)):
         sh = font.render(text, True, shadow)
         tx = font.render(text, True, color)
@@ -82,9 +82,11 @@ def draw_death_screen(surface, meters):
         surface.blit(sh, (rect.x + 2, rect.y + 2))
         surface.blit(tx, rect)
 
-    centered(DEATH_FONT_BIG, "YOU DIED", (215, 55, 55), SCREEN_H // 2 - 70)
-    centered(DEATH_FONT_MED, f"Distance travelled: {meters} m", (240, 240, 245), SCREEN_H // 2 + 10)
-    centered(HEALTH_FONT, "R to try again    M for difficulty menu", (200, 205, 215), SCREEN_H // 2 + 70)
+    centered(DEATH_FONT_BIG, "YOU DIED", (215, 55, 55), SCREEN_H // 2 - 80)
+    centered(DEATH_FONT_MED, f"Distance travelled: {meters} m", (240, 240, 245), SCREEN_H // 2)
+    if best is not None:
+        centered(DEATH_FONT_MED, f"Best: {best} m", (180, 210, 255), SCREEN_H // 2 + 44)
+    centered(HEALTH_FONT, "R to try again    M for difficulty menu", (200, 205, 215), SCREEN_H // 2 + 96)
 
 
 def draw_hotbar(surface, selected_slot):

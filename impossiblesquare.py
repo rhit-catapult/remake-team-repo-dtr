@@ -12,6 +12,8 @@ from typing import Iterable
 
 import pygame
 
+import scores
+
 
 SCREEN_W = 960
 SCREEN_H = 640
@@ -353,6 +355,7 @@ class Game:
 
     def load_level(self, index: int) -> None:
         self.level_index = index
+        scores.record("impossible", index + 1)   # persist furthest level reached
         self.level = self.levels[index]
         self.enemies = [Enemy(spec) for spec in self.level.enemies]
         self.respawn = grid_point(*self.level.start)

@@ -15,6 +15,8 @@ import sys
 
 import pygame
 
+import scores
+
 pygame.init()
 
 # ---------------------------------------------------------------------------
@@ -1391,6 +1393,8 @@ def draw_menu(surface, frame):
         prompt = font_large.render("Press SPACE to Fight!", True, GOLD)
         surface.blit(prompt, (SCREEN_W // 2 - prompt.get_width() // 2, 500))
 
+    draw_match_record(surface, 512)
+
     tip = font_tiny.render("ESC returns to menu  ·  First to KO wins", True, GRAY)
     surface.blit(tip, (SCREEN_W // 2 - tip.get_width() // 2, 560))
 
@@ -1406,9 +1410,23 @@ def draw_game_over(surface, winner_name, winner_color, frame):
     win = font_large.render(f"{winner_name} WINS!", True, winner_color)
     surface.blit(win, (SCREEN_W // 2 - win.get_width() // 2, 260))
 
+    draw_match_record(surface, 330)
+
     if (frame // 30) % 2 == 0:
         again = font_med.render("SPACE — Rematch    ESC — Menu", True, WHITE)
-        surface.blit(again, (SCREEN_W // 2 - again.get_width() // 2, 360))
+        surface.blit(again, (SCREEN_W // 2 - again.get_width() // 2, 390))
+
+
+def draw_match_record(surface, y):
+    """Show the running Red vs Blue win record, centered at height y."""
+    red_w = scores.get("karate_red")
+    blue_w = scores.get("karate_blue")
+    parts = [(f"RED {red_w}", RED), ("  —  ", WHITE), (f"{blue_w} BLUE", BLUE)]
+    widths = [font_med.size(t)[0] for t, _ in parts]
+    x = SCREEN_W // 2 - sum(widths) // 2
+    for (text, col), wgt in zip(parts, widths):
+        surface.blit(font_med.render(text, True, col), (x, y))
+        x += wgt
 
 
 # ---------------------------------------------------------------------------
@@ -1602,9 +1620,11 @@ while True:
             elif not player2.alive:
                 winner = player1.name
                 winner_color = RED
+                scores.bump("karate_red")     # Red (Player 1) wins this match
             else:
                 winner = player2.name
                 winner_color = BLUE
+                scores.bump("karate_blue")    # Blue (Player 2) wins this match
 
     # Keep VFX alive through playing + game over
     if state in ("playing", "gameover"):

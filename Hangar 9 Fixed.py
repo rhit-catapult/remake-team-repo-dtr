@@ -32,6 +32,8 @@ from typing import Optional
 
 import pygame
 
+import scores
+
 
 # ---------------------------------------------------------------------------
 # Video and gameplay constants
@@ -2729,6 +2731,8 @@ class Game:
         self.canvas.blit(keys, keys.get_rect(center=(INTERNAL_W // 2, 187)))
 
     def draw_end_screen(self):
+        best = scores.record("hangar", self.score)   # persist high score
+
         overlay = pygame.Surface((INTERNAL_W, INTERNAL_H), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 205))
         self.canvas.blit(overlay, (0, 0))
@@ -2741,11 +2745,13 @@ class Game:
             subtitle = f"SCORE {self.score:05d}   KILLS {self.kills}/{self.total_kills}"
 
         sub = self.font8.render(subtitle, False, WHITE)
+        best_txt = self.font8.render(f"BEST {best:05d}", False, (255, 220, 90))
         restart = self.font8.render("PRESS ENTER TO RESTART", False, WHITE)
 
         self.canvas.blit(title, title.get_rect(center=(INTERNAL_W // 2, 78)))
-        self.canvas.blit(sub, sub.get_rect(center=(INTERNAL_W // 2, 108)))
-        self.canvas.blit(restart, restart.get_rect(center=(INTERNAL_W // 2, 132)))
+        self.canvas.blit(sub, sub.get_rect(center=(INTERNAL_W // 2, 106)))
+        self.canvas.blit(best_txt, best_txt.get_rect(center=(INTERNAL_W // 2, 120)))
+        self.canvas.blit(restart, restart.get_rect(center=(INTERNAL_W // 2, 136)))
 
     def draw_pause(self):
         overlay = pygame.Surface((INTERNAL_W, INTERNAL_H), pygame.SRCALPHA)

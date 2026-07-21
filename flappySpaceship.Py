@@ -5,6 +5,7 @@ import math
 
 
 from astroid import Astroid
+import scores
 pygame.init()
 
 SCREEN_WIDTH = 640
@@ -161,7 +162,7 @@ def make_planet_surface(radius, base, has_ring):
 
 
 # 3. Set up the game clock (controls frame rate)
-highscore = 0
+highscore = scores.get("flappy")   # persistent best, shared across launcher sessions
 clock = pygame.time.Clock()
 counter = 0
 score = 0
@@ -282,6 +283,7 @@ while running:
                 score += 1
                 if score > highscore:
                     highscore = score
+                    scores.record("flappy", score)   # persist the new best
                 ast.point = False
             # Pixel-vs-pixel: ship hitbox against the actual asteroid pixels (not the gaps)
             mx, my = x + mask_ox, y + mask_oy
