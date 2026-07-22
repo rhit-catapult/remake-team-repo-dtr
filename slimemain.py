@@ -338,7 +338,8 @@ while True:
             # Shove the slime backwards (away from the enemy), not upward
             knockback_velocity_x = push_dir * MONSTER_KNOCKBACK
             if current_time - last_monster_attack_time >= monster_attack_cooldown_ms:
-                health_bar.damage(MONSTER_DAMAGE)
+                # +5 damage for every boss section passed (dmg, dmg+5, dmg+10, ...)
+                health_bar.damage(MONSTER_DAMAGE + boss_wave * 5)
                 last_monster_attack_time = current_time
 
     # Horizontal camera only: map (grass, plants, rock, islands) scrolls together
@@ -489,7 +490,7 @@ while True:
         draw_spike(screen, spike, camera_x, camera_y)
 
     for monster in monsters:
-        draw_monster(screen, monster, camera_x, camera_y, current_time)
+        draw_monster(screen, monster, camera_x, camera_y, current_time, boss_wave)
 
     for ob in obstacles:
         sx = obstacle_x(ob) - camera_x

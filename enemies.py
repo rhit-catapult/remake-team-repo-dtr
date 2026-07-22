@@ -102,23 +102,46 @@ def get_monster_hitbox(monster):
     )
 
 
-def draw_monster(surface, monster, camera_x, camera_y, time_ms):
-    """Draw a more detailed monster with a walk cycle and physical limbs."""
+def _sh(c, f):
+    """Scale a colour's brightness by f, clamped to 0..255."""
+    return (max(0, min(255, int(c[0] * f))), max(0, min(255, int(c[1] * f))), max(0, min(255, int(c[2] * f))))
+
+
+# Base monster body colour per boss tier (cycles once it runs out)
+MONSTER_TIERS = [
+    (80, 140, 70),    # 0 green (default)
+    (175, 70, 60),    # 1 red
+    (70, 105, 185),   # 2 blue
+    (155, 85, 175),   # 3 purple
+    (205, 135, 55),   # 4 orange
+    (55, 170, 160),   # 5 teal
+]
+
+
+def draw_monster(surface, monster, camera_x, camera_y, time_ms, tier=0):
+    """Draw a monster; its colour scheme shifts with the boss tier."""
+    base = MONSTER_TIERS[tier % len(MONSTER_TIERS)]
+    body_color = base
+    shadow_color = _sh(base, 0.6)
+    body_light = _sh(base, 1.35)
+    head_color = _sh(base, 1.12)
+    leg_color = _sh(base, 0.78)
+    limb_color = _sh(base, 0.95)
+    feet_color = _sh(base, 0.45)
+
     screen_x = monster["x"] - camera_x
     screen_y = monster["y"] - camera_y
     rect = pygame.Rect(int(screen_x), int(screen_y), monster["width"], monster["height"])
     bob = math.sin(time_ms * 0.006 + monster["phase"]) * 1.8
     body_y = int(rect.y + 3 + bob)
     body_rect = pygame.Rect(rect.x + 4, body_y, rect.width - 8, rect.height - 8)
-    body_color = (80, 140, 70)
-    shadow_color = (45, 90, 45)
 
     pygame.draw.ellipse(surface, shadow_color, (body_rect.x + 2, body_rect.y + 2, body_rect.width, body_rect.height))
     pygame.draw.ellipse(surface, body_color, body_rect)
-    pygame.draw.ellipse(surface, (120, 190, 95), (body_rect.x + 3, body_rect.y + 3, body_rect.width - 6, body_rect.height - 8))
+    pygame.draw.ellipse(surface, body_light, (body_rect.x + 3, body_rect.y + 3, body_rect.width - 6, body_rect.height - 8))
 
     head_rect = pygame.Rect(rect.x + rect.width // 2 - 7, body_y - 7, 14, 12)
-    pygame.draw.ellipse(surface, (95, 160, 80), head_rect)
+    pygame.draw.ellipse(surface, head_color, head_rect)
     pygame.draw.circle(surface, (255, 255, 255), (head_rect.x + 4, head_rect.y + 4), 2)
     pygame.draw.circle(surface, (255, 255, 255), (head_rect.x + 10, head_rect.y + 4), 2)
     pygame.draw.circle(surface, (20, 20, 20), (head_rect.x + 4 + int(monster["direction"] * 1), head_rect.y + 4), 1)
@@ -128,12 +151,12 @@ def draw_monster(surface, monster, camera_x, camera_y, time_ms):
         stride = math.sin(time_ms * 0.009 + monster["phase"] + side * 0.7) * 4
         leg_x = rect.x + 8 + side * 6
         leg_y = rect.y + rect.height - 4 + int(abs(stride) * 0.3)
-        pygame.draw.line(surface, (60, 110, 55), (rect.x + 10, rect.y + rect.height - 6), (leg_x, leg_y), 3)
-        pygame.draw.line(surface, (60, 110, 55), (rect.x + rect.width - 10, rect.y + rect.height - 6), (rect.x + rect.width - 10 + side * 6, leg_y), 3)
-        pygame.draw.circle(surface, (80, 130, 70), (int(leg_x), int(leg_y)), 3)
+        pygame.draw.line(surface, leg_color, (rect.x + 10, rect.y + rect.height - 6), (leg_x, leg_y), 3)
+        pygame.draw.line(surface, leg_color, (rect.x + rect.width - 10, rect.y + rect.height - 6), (rect.x + rect.width - 10 + side * 6, leg_y), 3)
+        pygame.draw.circle(surface, limb_color, (int(leg_x), int(leg_y)), 3)
 
     arm_phase = math.sin(time_ms * 0.008 + monster["phase"]) * 3
-    pygame.draw.line(surface, (80, 130, 70), (rect.x + 6, body_y + 8), (rect.x + 2 + int(arm_phase), body_y + 14), 3)
-    pygame.draw.line(surface, (80, 130, 70), (rect.x + rect.width - 6, body_y + 8), (rect.x + rect.width - 2 - int(arm_phase), body_y + 14), 3)
+    pygame.draw.line(surface, limb_color, (rect.x + 6, body_y + 8), (rect.x + 2 + int(arm_phase), body_y + 14), 3)
+    pygame.draw.line(surface, limb_color, (rect.x + rect.width - 6, body_y + 8), (rect.x + rect.width - 2 - int(arm_phase), body_y + 14), 3)
 
-    pygame.draw.rect(surface, (35, 55, 30), (rect.x + 7, rect.y + rect.height - 5, rect.width - 14, 4), border_radius=2)
+    pygame.draw.rect(surface, feet_color, (rect.x + 7, rect.y + rect.height - 5, rect.width - 14, 4), border_radius=2)

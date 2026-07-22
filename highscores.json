@@ -1,7 +1,8 @@
 {
   "_player": "daniel",
   "flappy": {
-    "YOU": 21
+    "YOU": 21,
+    "daniel": 51
   },
   "karate_red": 4,
   "karate_blue": 11,
@@ -12,7 +13,7 @@
     "daniel": 3
   },
   "slime_normal": {
-    "daniel": 41
+    "daniel": 309
   },
   "hangar": {
     "daniel": 2700
