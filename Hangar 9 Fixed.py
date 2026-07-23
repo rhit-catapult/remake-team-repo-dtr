@@ -79,6 +79,7 @@ DOOR_TILES = ("D", "R", "K", "G", "P")
 SHOOTING_ENEMY_TYPES = frozenset(
     ("grunt", "turret", "spitter", "medic", "boss", "summoner", "overseer", "nightmare")
 )
+BOSS_ENEMY_TYPES = frozenset(("boss", "summoner", "overseer", "nightmare"))
 
 WHITE = (235, 235, 225)
 BLACK = (0, 0, 0)
@@ -2753,8 +2754,13 @@ class Game:
             enemy.saw_player_last_frame = sees_player
             if gained_line_of_sight and enemy.kind in SHOOTING_ENEMY_TYPES:
                 # Ranged enemies react quickly but still give the player a
-                # brief warning window after first sight or reappearing.
-                enemy.attack_cooldown = random.uniform(0.5, 0.75)
+                # brief warning window after first sight or reappearing. Bosses
+                # keep the slightly longer, randomized tell; regular shooters
+                # fire after a flat half-second.
+                if enemy.kind in BOSS_ENEMY_TYPES:
+                    enemy.attack_cooldown = random.uniform(0.5, 0.75)
+                else:
+                    enemy.attack_cooldown = 0.5
 
             newly_alerted = sees_player and not enemy.alerted
             if sees_player:
